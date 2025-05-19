@@ -28,21 +28,28 @@ session = {
 # === Step 1: Detect intent
 def detect_intent(user_message):
     prompt = f"""
-You are a smart travel assistant. The user is asking a question. Your task is to classify the request as one of:
+You are a classifier. Read the message below and reply with ONLY ONE WORD from this list:
 
 - flight
 - hotel
 - unknown
 
-Respond with only one word.
-Message: {user_message}
+User message:
+{user_message}
 """
     res = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    return res.choices[0].message.content.strip().lower()
+    reply = res.choices[0].message.content.strip().lower()
+
+    if "flight" in reply:
+        return "flight"
+    elif "hotel" in reply:
+        return "hotel"
+    else:
+        return "unknown"
 
 # === Step 2: Extract travel info from user input
 def extract_flight_info(user_message):
@@ -131,7 +138,6 @@ def ask_for_missing_info(context):
 
 # === Step 6: Process Message
 def process_message(user_message):
-    # Reservation trigger
     if "رزرو" in user_message:
         return "✅ رزرو شما ثبت شد. یکی از کارشناسان ما به زودی با شما تماس خواهد گرفت."
 
@@ -147,11 +153,9 @@ def process_message(user_message):
         if extracted.get(key) is not None:
             session[key] = extracted[key]
 
-    # If info missing, ask user
     if not all([session["from"], session["to"], session["date"], session["adults"] is not None]):
         return ask_for_missing_info(session)
 
-    # Data source
     sheet_name = "international_flights" if session["intent"] == "flight" else "international_hotels"
     data = fetch_sheet_data(sheet_name)
 
