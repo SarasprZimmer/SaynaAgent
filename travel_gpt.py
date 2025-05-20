@@ -3,6 +3,9 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import requests
 from datetime import datetime
+from logger import log_to_google_sheet
+import os
+import requests
 
 load_dotenv()
 
@@ -127,7 +130,7 @@ def ask_for_missing_info(context):
 نام: {context.get("name")}
 شماره تماس: {context.get("phone")}
 
-لطفاً فقط اطلاعاتی که وجود ندارد را خیلی مودبانه از کاربر بپرسید.
+ فقط اطلاعاتی که وجود ندارد را خیلی مودبانه از کاربر بپرسید.
 """
     res = client.chat.completions.create(
         model="gpt-4",
@@ -159,11 +162,30 @@ def log_to_sheet(context):
 
 # === Step 7: Main handler ===
 def process_message(user_message):
+    # Reservation trigger
     if "رزرو" in user_message:
-        session["reserved"] = True
-        log_to_sheet(session)
+        name = session.get("name", "نامشخص")
+        phone = session.get("phone", "نامشخص")
+        intent = session.get("intent", "نامشخص")
+        from_city = session.get("from", "نامشخص")
+        to_city = session.get("to", "نامشخص")
+
+        # 🔔 Notify agent via WhatsApp
+        try:
+            agent_number = os.getenv("AGENT_WHATSAPP_NUMBER")
+            agent_msg = f"📥 رزرو جدید:\nنام: {name}\nشماره: {phone}\nدرخواست: {intent} از {from_city} به {to_city}"
+            requests.get(f"https://api.ultramsg.com/instanceXXXX/messages/chat", params={
+                "token": os.getenv("ULTRAMSG_TOKEN"),
+                "to": agent_number,
+                "body": agent_msg
+            })
+            print("📣 Agent notified.")
+        except Exception as e:
+            print(f"❌ Agent notification failed: {e}")
+
         return "✅ رزرو شما ثبت شد. یکی از کارشناسان ما به زودی با شما تماس خواهد گرفت."
 
+    # Detect intent
     if session["intent"] is None:
         session["intent"] = detect_intent(user_message)
         print(f"📌 دسته‌بندی: {session['intent']}")
@@ -171,22 +193,39 @@ def process_message(user_message):
     if session["intent"] not in ["flight", "hotel"]:
         return "در حال حاضر فقط می‌تونم درباره پروازها و هتل‌ها کمکتون کنم."
 
+    # Extract travel info
     extracted = extract_flight_info(user_message)
     for key in ["from", "to", "date", "adults", "children", "infants", "name", "phone"]:
         if extracted.get(key) is not None:
             session[key] = extracted[key]
 
-    if not all([session["from"], session["to"], session["date"], session["adults"], session["name"], session["phone"]]):
+    # If info missing, ask user
+    if not all([session["from"], session["to"], session["date"], session["adults"] is not None]):
         return ask_for_missing_info(session)
 
-    # Log only once
-    if not session["logged"]:
-        log_to_sheet(session)
-        session["logged"] = True
+    # ✅ Log entry if name and phone available
+    if session.get("name") and session.get("phone"):
+        log_to_google_sheet({
+            "name": session["name"],
+            "phone": session["phone"],
+            "intent": session["intent"],
+            "from": session.get("from", "نامشخص"),
+            "to": session.get("to", "نامشخص"),
+            "date": session.get("date", "نامشخص"),
+            "adults": session.get("adults"),
+            "children": session.get("children"),
+            "infants": session.get("infants"),
+            "proceeded_to_reservation": "خیر"
+        })
 
-    # Fetch and reply
+    # Get sheet data
     sheet_name = "international_flights" if session["intent"] == "flight" else "international_hotels"
-    data = fetch_sheet_data(sheet_name)
+    try:
+        data = fetch_sheet_data(sheet_name)
+    except Exception as e:
+        print(f"❌ Failed to fetch sheet data: {e}")
+        return "خطایی در دریافت اطلاعات پیش آمد. لطفاً دوباره تلاش کنید."
+
     return generate_reply(data, session)
 
 # === CLI ===
