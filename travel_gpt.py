@@ -164,6 +164,9 @@ def process_message(user_message):
 
     sheet_name = "international_flights" if session["intent"] == "flight" else "international_hotels"
     data = fetch_sheet_data(sheet_name)
+    if not session["logged"] and all([session["name"], session["phone"], session["from"], session["to"], session["date"], session["adults"] is not None]):
+    log_to_sheet(session)
+    session["logged"] = True
 
     return generate_reply(data, session)
 
