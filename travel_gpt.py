@@ -1,21 +1,15 @@
 import os
 from dotenv import load_dotenv
 from openai import OpenAI
-import gspread
-from logger import log_to_sheet
-from oauth2client.service_account import ServiceAccountCredentials
+import requests
+from datetime import datetime
 
 load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-SHEET_ID = os.getenv("SHEET_ID")
+WEBHOOK_LOG_URL = os.getenv("LOG_WEBHOOK_URL")
 
-# === Google Sheets Setup ===
-scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("service_account.json", scope)
-gclient = gspread.authorize(creds)
-
-# === Session memory
+# === Session memory ===
 session = {
     "intent": None,
     "from": None,
@@ -23,41 +17,33 @@ session = {
     "date": None,
     "adults": None,
     "children": None,
-    "infants": None
+    "infants": None,
     "name": None,
     "phone": None,
     "reserved": False,
-    "logged": False  # to prevent duplicates
-
+    "logged": False
 }
 
-# === Step 1: Detect intent
+# === Step 1: Detect intent ===
 def detect_intent(user_message):
     prompt = f"""
-You are a classifier. Read the message below and reply with ONLY ONE WORD from this list:
+You are a smart travel assistant. The user is asking a question. Your task is to classify the request as one of:
 
 - flight
 - hotel
 - unknown
 
-User message:
-{user_message}
+Respond with only one word.
+Message: {user_message}
 """
     res = client.chat.completions.create(
         model="gpt-4",
         messages=[{"role": "user", "content": prompt}],
         temperature=0
     )
-    reply = res.choices[0].message.content.strip().lower()
+    return res.choices[0].message.content.strip().lower()
 
-    if "flight" in reply:
-        return "flight"
-    elif "hotel" in reply:
-        return "hotel"
-    else:
-        return "unknown"
-
-# === Step 2: Extract travel info from user input
+# === Step 2: Extract travel info ===
 def extract_flight_info(user_message):
     prompt = f"""
 You are a travel assistant. Extract the following from the user's message and return a valid Python dictionary (not JSON).
@@ -70,7 +56,9 @@ Use this exact structure:
   "date": str or None,
   "adults": int or None,
   "children": int or None,
-  "infants": int or None
+  "infants": int or None,
+  "name": str or None,
+  "phone": str or None
 }}
 
 User message:
@@ -90,13 +78,17 @@ User message:
         print("⚠️ GPT parsing error:", e)
         return {}
 
-# === Step 3: Fetch Sheet Data
+# === Step 3: Fetch data from Google Sheet (via webhook) ===
 def fetch_sheet_data(sheet_name):
-    sheet = gclient.open_by_key(SHEET_ID)
-    worksheet = sheet.worksheet(sheet_name)
-    return worksheet.get_all_records()
+    SHEET_WEBHOOK = os.getenv("FLIGHT_WEBHOOK_URL") if sheet_name == "international_flights" else os.getenv("HOTEL_WEBHOOK_URL")
+    try:
+        res = requests.get(SHEET_WEBHOOK)
+        return res.json()
+    except Exception as e:
+        print("❌ Failed to fetch sheet data:", e)
+        return []
 
-# === Step 4: Generate reply based on sheet and context
+# === Step 4: Generate GPT reply ===
 def generate_reply(data_list, context):
     prompt = f"""
 شما یک دستیار سفر هوشمند هستید که به زبان فارسی پاسخ می‌دهد.
@@ -121,7 +113,7 @@ def generate_reply(data_list, context):
     )
     return res.choices[0].message.content.strip()
 
-# === Step 5: Ask for missing info
+# === Step 5: Ask for missing info ===
 def ask_for_missing_info(context):
     prompt = f"""
 شما یک بات دستیار سفر هستید. اطلاعاتی که از کاربر دارید ناقص است:
@@ -132,8 +124,10 @@ def ask_for_missing_info(context):
 بزرگسال: {context.get("adults")}
 کودک: {context.get("children")}
 نوزاد: {context.get("infants")}
+نام: {context.get("name")}
+شماره تماس: {context.get("phone")}
 
-لطفاً فقط و فقط اطلاعاتی که وجود ندارد را خیلی مودبانه از کاربر بپرسید.
+لطفاً فقط اطلاعاتی که وجود ندارد را خیلی مودبانه از کاربر بپرسید.
 """
     res = client.chat.completions.create(
         model="gpt-4",
@@ -142,9 +136,32 @@ def ask_for_missing_info(context):
     )
     return res.choices[0].message.content.strip()
 
-# === Step 6: Process Message
+# === Step 6: Log to Google Sheet via webhook ===
+def log_to_sheet(context):
+    try:
+        payload = {
+            "timestamp": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "name": context.get("name", ""),
+            "phone": context.get("phone", ""),
+            "intent": context.get("intent", ""),
+            "from": context.get("from", ""),
+            "to": context.get("to", ""),
+            "date": context.get("date", ""),
+            "adults": context.get("adults", ""),
+            "children": context.get("children", ""),
+            "infants": context.get("infants", ""),
+            "reserved": "✅" if context.get("reserved") else ""
+        }
+        requests.post(WEBHOOK_LOG_URL, json=payload)
+        print("📤 Logged via webhook")
+    except Exception as e:
+        print("⚠️ Failed to send log via webhook:", e)
+
+# === Step 7: Main handler ===
 def process_message(user_message):
     if "رزرو" in user_message:
+        session["reserved"] = True
+        log_to_sheet(session)
         return "✅ رزرو شما ثبت شد. یکی از کارشناسان ما به زودی با شما تماس خواهد گرفت."
 
     if session["intent"] is None:
@@ -155,22 +172,24 @@ def process_message(user_message):
         return "در حال حاضر فقط می‌تونم درباره پروازها و هتل‌ها کمکتون کنم."
 
     extracted = extract_flight_info(user_message)
-    for key in ["from", "to", "date", "adults", "children", "infants"]:
+    for key in ["from", "to", "date", "adults", "children", "infants", "name", "phone"]:
         if extracted.get(key) is not None:
             session[key] = extracted[key]
 
-    if not all([session["from"], session["to"], session["date"], session["adults"] is not None]):
+    if not all([session["from"], session["to"], session["date"], session["adults"], session["name"], session["phone"]]):
         return ask_for_missing_info(session)
 
+    # Log only once
+    if not session["logged"]:
+        log_to_sheet(session)
+        session["logged"] = True
+
+    # Fetch and reply
     sheet_name = "international_flights" if session["intent"] == "flight" else "international_hotels"
     data = fetch_sheet_data(sheet_name)
-    if not session["logged"] and all([session["name"], session["phone"], session["from"], session["to"], session["date"], session["adults"] is not None]):
-    log_to_sheet(session)
-    session["logged"] = True
-
     return generate_reply(data, session)
 
-# === CLI Interface
+# === CLI ===
 if __name__ == "__main__":
     print("🤖 TravelGPT Ready. Type 'exit' to quit.")
     print("""
@@ -182,8 +201,9 @@ if __name__ == "__main__":
 - مبدا و مقصد  
 - تاریخ سفر (مثلاً ۱۰ خرداد)  
 - تعداد نفرات (چند بزرگسال، کودک، نوزاد)  
+- نام و شماره تماس
 
-مثال: «می‌خوام از شیراز به دبی برم، ۳ بزرگسال، هفته آینده»
+مثال: «می‌خوام از شیراز به دبی برم، ۳ بزرگسال، هفته آینده، اسمم سارا هست ۰۹۱۲۳۴۵۶۷۸۹»
 
 در نهایت اگه خواستی رزرو کنی، فقط کافیه بنویسی: رزرو ✅
 
