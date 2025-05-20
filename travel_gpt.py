@@ -23,6 +23,11 @@ session = {
     "adults": None,
     "children": None,
     "infants": None
+    "name": None,
+    "phone": None,
+    "reserved": False,
+    "logged": False  # to prevent duplicates
+
 }
 
 # === Step 1: Detect intent
