@@ -2,6 +2,7 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import gspread
+from logger import log_to_sheet
 from oauth2client.service_account import ServiceAccountCredentials
 
 load_dotenv()
