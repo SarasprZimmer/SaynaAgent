@@ -3,9 +3,6 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import requests
 from datetime import datetime
-from logger import log_to_google_sheet
-import os
-import requests
 
 load_dotenv()
 
@@ -161,6 +158,9 @@ def log_to_sheet(context):
         print("⚠️ Failed to send log via webhook:", e)
 
 # === Step 7: Main handler ===
+from logger import log_to_google_sheet
+import os
+import requests
 def process_message(user_message):
     # Reservation trigger
     if "رزرو" in user_message:
