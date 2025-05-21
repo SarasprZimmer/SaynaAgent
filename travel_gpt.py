@@ -3,6 +3,28 @@ from dotenv import load_dotenv
 from openai import OpenAI
 import requests
 from datetime import datetime
+# === Session memory
+sessions = {}
+
+def reset_session(chat_id):
+    sessions[chat_id] = {
+        "intent": None,
+        "from": None,
+        "to": None,
+        "date": None,
+        "adults": None,
+        "children": None,
+        "infants": None,
+        "name": None,
+        "phone": None,
+        "reserved": False
+    }
+
+# Initialize session if not exists
+def get_session(chat_id):
+    if chat_id not in sessions:
+        reset_session(chat_id)
+    return sessions[chat_id]
 
 load_dotenv()
 
