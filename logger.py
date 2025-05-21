@@ -35,3 +35,30 @@ def log_to_sheet(context):
         print("📝 Logged to sheet.")
     except Exception as e:
         print("⚠️ Failed to log to sheet:", e)
+        import httpx
+
+def notify_agent(client_info):
+    TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+    AGENT_CHAT_ID = os.getenv("AGENT_CHAT_ID")
+    TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
+
+    message = f"""
+📢 رزرو جدید دریافت شد!
+
+👤 نام: {client_info.get("name", "نامشخص")}
+📞 شماره تماس: {client_info.get("phone", "نامشخص")}
+📌 نوع درخواست: {client_info.get("intent", "نامشخص")}
+✈️ مبدأ: {client_info.get("from", "نامشخص")}
+🛬 مقصد: {client_info.get("to", "نامشخص")}
+📅 تاریخ: {client_info.get("date", "نامشخص")}
+👥 بزرگسال: {client_info.get("adults", "؟")} | کودک: {client_info.get("children", "۰")} | نوزاد: {client_info.get("infants", "۰")}
+"""
+
+    try:
+        httpx.post(TELEGRAM_API, json={
+            "chat_id": AGENT_CHAT_ID,
+            "text": message
+        })
+    except Exception as e:
+        print(f"❌ Failed to notify agent: {e}")
+
