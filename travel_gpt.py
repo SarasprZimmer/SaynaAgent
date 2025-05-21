@@ -10,9 +10,9 @@ load_dotenv()
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 SHEET_ID = os.getenv("SHEET_ID")
-FLIGHT_WEBHOOK = os.getenv("FLIGHT_WEBHOOK")
-HOTEL_WEBHOOK = os.getenv("HOTEL_WEBHOOK")
-LOG_WEBHOOK = os.getenv("LOG_WEBHOOK")
+FLIGHT_WEBHOOK = os.getenv("FLIGHT_WEBHOOK_URL")
+HOTEL_WEBHOOK = os.getenv("HOTEL_WEBHOOK_URL")
+LOG_WEBHOOK = os.getenv("LOG_WEBHOOK_URL")
 
 # Google Sheets setup
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
