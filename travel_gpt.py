@@ -183,7 +183,7 @@ def log_to_sheet(context):
 from logger import log_to_sheet
 import os
 import requests
-def process_message(user_message):
+def process_message(user_message, chat_id=None):
     # Reservation trigger
     if "رزرو" in user_message:
         name = session.get("name", "نامشخص")
